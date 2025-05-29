@@ -207,8 +207,12 @@ async def monitor_trades():
         await asyncio.sleep(5)
 
 # --- Main ---
-async def main():
-    await client.start()
-    await asyncio.gather(update_prices(), monitor_trades(), client.run_until_disconnected())
+async def bootstrap():
+    await update_prices()
+    await monitor_trades()
 
-asyncio.run(main())
+with client:
+    client.loop.create_task(update_prices())
+    client.loop.create_task(monitor_trades())
+    client.run_until_disconnected()
+
