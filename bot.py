@@ -56,98 +56,68 @@ def update_balance(uid, new_balance):
     users.update_one({"_id": uid}, {"$set": {"balance": new_balance}})
 
 # --- Command Handlers ---
+
 @client.on(events.NewMessage(pattern='/start'))
 async def start(event):
-    uid = event.sender_id
-    get_user(uid)
-    await event.respond("Welcome to the trading simulator! Enter your starting balance (in USDT):")
+    get_user(event.sender_id)
+    await event.respond("Welcome to the trading simulator! Use /sb <amount> to set your starting balance.")
 
-@client.on(events.NewMessage)
-async def handler(event):
+@client.on(events.NewMessage(pattern=r'/sb (\d+(\.\d{1,2})?)'))
+async def set_balance(event):
     uid = event.sender_id
     user = get_user(uid)
-    msg = event.message.message.strip()
+    if user['balance'] > 0:
+        await event.respond("You have already set your balance.")
+        return
+    amount = float(event.pattern_match.group(1))
+    update_balance(uid, amount)
+    await event.respond(f"Balance set to {amount} USDT.")
 
-    if user['balance'] == 0:
-        try:
-            amount = float(msg)
-            update_balance(uid, amount)
-            await event.respond(f"Balance set to {amount} USDT. Enter trade symbol (e.g. btcusdt):")
-        except:
-            await event.respond("Please enter a valid number.")
+@client.on(events.NewMessage(pattern=r'/trade (\w+) (\d+(\.\d+)?) (\d+) (long|short) (\d+(\.\d+)?)(?: (\d+(\.\d+)?))?'))
+async def trade(event):
+    uid = event.sender_id
+    user = get_user(uid)
+
+    if user['balance'] <= 0:
+        await event.respond("Please set your balance first using /sb <amount>.")
         return
 
-    last_trade = trades.find_one({"user_id": uid, "status": "initiating"})
+    parts = event.pattern_match.groups()
+    symbol = parts[0].lower()
+    entry = float(parts[1])
+    leverage = int(parts[3])
+    side = parts[4].lower()
+    target = float(parts[5])
+    stoploss = float(parts[7]) if parts[7] else None
 
-    if not last_trade:
-        if msg.lower() in symbols:
-            trades.insert_one({
-                "user_id": uid,
-                "symbol": msg.lower(),
-                "status": "initiating",
-                "step": "amount"
-            })
-            await event.respond("How many USDT do you want to trade?")
+    if symbol not in symbols:
+        await event.respond(f"Invalid symbol. Supported: {', '.join(symbols)}")
         return
 
-    step = last_trade['step']
-    if step == "amount":
-        try:
-            usdt = float(msg)
-            if usdt > user['balance']:
-                await event.respond("You don’t have enough balance.")
-                return
-            trades.update_one({"_id": last_trade['_id']}, {"$set": {"usdt": usdt, "step": "side"}})
-            await event.respond("Long or Short?")
-        except:
-            await event.respond("Invalid amount.")
-    elif step == "side":
-        if msg.lower() in ['long', 'short']:
-            trades.update_one({"_id": last_trade['_id']}, {"$set": {"side": msg.lower(), "step": "target"}})
-            await event.respond("Enter your target price:")
-        else:
-            await event.respond("Please type 'Long' or 'Short'.")
-    elif step == "target":
-        try:
-            target = float(msg)
-            trades.update_one({"_id": last_trade['_id']}, {"$set": {"target": target, "step": "stoploss"}})
-            await event.respond("Enter stop loss (or type 'skip'):")
-        except:
-            await event.respond("Invalid target price.")
-    elif step == "stoploss":
-        if msg.lower() == 'skip':
-            stop = None
-        else:
-            try:
-                stop = float(msg)
-            except:
-                await event.respond("Invalid stop loss.")
-                return
-        trades.update_one({"_id": last_trade['_id']}, {"$set": {"stop": stop, "step": "leverage"}})
-        await event.respond("Enter leverage:")
-    elif step == "leverage":
-        try:
-            leverage = int(msg)
-            entry_price = price_cache.get(last_trade['symbol'], 0)
-            if entry_price == 0:
-                await event.respond("Error fetching price. Try again.")
-                return
-            position = last_trade['usdt'] * leverage / entry_price
-            liquidation_price = entry_price * (1 - (1 / leverage)) if last_trade['side'] == 'long' else entry_price * (1 + (1 / leverage))
-            trades.update_one({"_id": last_trade['_id']}, {
-                "$set": {
-                    "entry": entry_price,
-                    "leverage": leverage,
-                    "position": position,
-                    "liq": liquidation_price,
-                    "status": "active",
-                    "opened": time.time()
-                }
-            })
-            users.update_one({"_id": uid}, {"$inc": {"balance": -last_trade['usdt']}})
-            await event.respond(f"Trade opened at {entry_price}, leverage {leverage}x.")
-        except:
-            await event.respond("Invalid leverage.")
+    usdt = user['balance'] / 2  # Use 50% of balance for simplicity
+    position = usdt * leverage / entry
+    liq = entry * (1 - 1 / leverage) if side == 'long' else entry * (1 + 1 / leverage)
+
+    trades.insert_one({
+        "user_id": uid,
+        "symbol": symbol,
+        "usdt": usdt,
+        "side": side,
+        "entry": entry,
+        "target": target,
+        "stop": stoploss,
+        "leverage": leverage,
+        "position": position,
+        "liq": liq,
+        "status": "active",
+        "opened": time.time()
+    })
+
+    users.update_one({"_id": uid}, {"$inc": {"balance": -usdt}})
+    await event.respond(
+        f"Trade opened: {symbol.upper()} | {side} | Entry: {entry} | Leverage: {leverage}x | "
+        f"Target: {target} | Stop Loss: {stoploss or 'None'}"
+    )
 
 @client.on(events.NewMessage(pattern='/balance'))
 async def balance(event):
@@ -207,12 +177,8 @@ async def monitor_trades():
         await asyncio.sleep(5)
 
 # --- Main ---
-async def bootstrap():
-    await update_prices()
-    await monitor_trades()
+async def main():
+    await client.start()
+    await asyncio.gather(update_prices(), monitor_trades(), client.run_until_disconnected())
 
-with client:
-    client.loop.create_task(update_prices())
-    client.loop.create_task(monitor_trades())
-    client.run_until_disconnected()
-
+asyncio.run(main())
