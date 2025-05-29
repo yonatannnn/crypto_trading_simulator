@@ -1,0 +1,59 @@
+import time
+import asyncio
+from pymongo import MongoClient
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+MONGO_URI = os.getenv('MONGO_URI')
+
+mongo = MongoClient(MONGO_URI)
+db = mongo['trading_bot']
+trades = db['trades']
+users = db['users']
+
+def create_trade(uid, symbol, entry, leverage, side, target, stop, price_cache):
+    user = users.find_one({"_id": uid})
+    usdt = user['balance'] / 2  # using 50% of available balance
+    position = usdt * leverage / entry
+    liq = entry * (1 - 1 / leverage) if side == 'long' else entry * (1 + 1 / leverage)
+
+    trades.insert_one({
+        "user_id": uid,
+        "symbol": symbol,
+        "usdt": usdt,
+        "side": side,
+        "entry": entry,
+        "target": target,
+        "stop": stop,
+        "leverage": leverage,
+        "position": position,
+        "liq": liq,
+        "status": "active",
+        "opened": time.time()
+    })
+
+async def monitor_trades(client, price_cache):
+    while True:
+        active = list(trades.find({"status": "active"}))
+        for trade in active:
+            price = price_cache.get(trade['symbol'], 0)
+            if not price:
+                continue
+            pnl = (price - trade['entry']) * trade['position'] * (1 if trade['side'] == 'long' else -1)
+            uid = trade['user_id']
+            hit_target = (price >= trade['target']) if trade['side'] == 'long' else (price <= trade['target'])
+            hit_stop = (price <= trade['stop']) if trade['side'] == 'long' else (price >= trade['stop']) if trade['stop'] else False
+            hit_liq = (price <= trade['liq']) if trade['side'] == 'long' else (price >= trade['liq'])
+
+            if hit_target or hit_stop or hit_liq:
+                reason = "target" if hit_target else "stop loss" if hit_stop else "liquidation"
+                final_pnl = pnl if reason != 'liquidation' else -trade['usdt']
+                users.update_one({"_id": uid}, {"$inc": {"balance": trade['usdt'] + final_pnl}})
+                trades.update_one({"_id": trade['_id']}, {"$set": {
+                    "status": "closed",
+                    "exit": price,
+                    "closed": time.time()
+                }})
+                await client.send_message(uid, f"Trade closed due to {reason}. Final PnL: {pnl:.2f} USDT")
+        await asyncio.sleep(5)
