@@ -28,11 +28,26 @@ async def update_prices():
                 pass
         await asyncio.sleep(5)
 
-# Handlers
 @client.on(events.NewMessage(pattern='/start'))
 async def start(event):
     get_user(event.sender_id)
-    await event.respond("Welcome to the trading simulator! Use /sb <amount> to set your balance.")
+    welcome_text = """
+👋 *Welcome to the Crypto Trading Simulator Bot!*
+
+You can simulate leveraged crypto trades with live Binance prices.
+Start by setting your balance and placing trades.
+
+📘 *Commands*:
+/sb <amount> – Set your starting balance
+/trade <symbol> <entry> <leverage> <long|short> <target> [stoploss] – Open a trade
+/balance – Show your total equity
+/available – Show unallocated funds
+/help – Show all commands
+/about – Learn about this bot
+"""
+    await event.respond(welcome_text, parse_mode='markdown')
+
+
 
 @client.on(events.NewMessage(pattern=r'/sb (\d+(\.\d{1,2})?)'))
 async def sb(event):
@@ -71,6 +86,34 @@ async def balance(event):
     uid = event.sender_id
     equity = get_equity(uid, price_cache)
     await event.respond(f"Total Equity: {equity:.2f} USDT")
+
+@client.on(events.NewMessage(pattern='/help'))
+async def help_cmd(event):
+    help_text = """
+📘 *Trading Bot Commands*:
+
+/start – Initialize your account
+/sb <amount> – Set starting balance (first time only)
+/trade <symbol> <entry> <leverage> <long|short> <target> [stoploss] – Open a new trade
+/balance – View your total equity (available + open trades)
+/available – See how much is free for new trades
+/help – Show this help message
+/about – About this bot
+"""
+    await event.respond(help_text, parse_mode='markdown')
+
+@client.on(events.NewMessage(pattern='/about'))
+async def about(event):
+    await event.respond(
+        "📈 *Crypto Trading Simulator Bot*\n\n"
+        "This bot simulates leveraged crypto trades using live Binance prices.\n"
+        "- Paper-trade with virtual USDT\n"
+        "- Track equity and available balance\n"
+        "- Supports BTC, ETH, SOL, and more\n\n"
+        "Built with ❤️ using Python, Telethon, MongoDB, and Binance API.",
+        parse_mode='markdown'
+    )
+
 
 @client.on(events.NewMessage(pattern='/available'))
 async def available(event):
