@@ -1,6 +1,7 @@
 import time
 import asyncio
 from pymongo import MongoClient
+from bson import ObjectId
 import os
 from dotenv import load_dotenv
 
@@ -14,7 +15,7 @@ users = db['users']
 
 def create_trade(uid, symbol, entry, leverage, side, target, stop, price_cache):
     user = users.find_one({"_id": uid})
-    usdt = user['balance'] / 2  # using 50% of available balance
+    usdt = user['balance'] / 2
     position = usdt * leverage / entry
     liq = entry * (1 - 1 / leverage) if side == 'long' else entry * (1 + 1 / leverage)
 
@@ -57,3 +58,10 @@ async def monitor_trades(client, price_cache):
                 }})
                 await client.send_message(uid, f"Trade closed due to {reason}. Final PnL: {pnl:.2f} USDT")
         await asyncio.sleep(5)
+
+def close_trade_by_id(trade_id, price_cache):
+    trade = trades.find_one({"_id": ObjectId(trade_id), "status": "active"})
+    if not trade:
+        return None, "Trade not found or already closed."
+
+    price = price_cache.g_

@@ -29,8 +29,7 @@ def get_equity(uid, price_cache):
     active_trades = trades.find({"user_id": uid, "status": "active"})
     equity = user['balance']
     for trade in active_trades:
-        symbol = trade['symbol']
-        price = price_cache.get(symbol, trade['entry'])
+        price = price_cache.get(trade['symbol'], trade['entry'])
         pnl = (price - trade['entry']) * trade['position'] * (1 if trade['side'] == 'long' else -1)
         equity += trade['usdt'] + pnl
     return equity
