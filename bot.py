@@ -179,6 +179,13 @@ async def monitor_trades():
 # --- Main ---
 async def main():
     await client.start()
-    await asyncio.gather(update_prices(), monitor_trades(), client.run_until_disconnected())
+    await asyncio.gather(
+        update_prices(),
+        monitor_trades(),
+        client.run_until_disconnected()
+    )
 
-asyncio.run(main())
+if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
+
