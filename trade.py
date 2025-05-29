@@ -13,9 +13,9 @@ db = mongo['trading_bot']
 trades = db['trades']
 users = db['users']
 
-def create_trade(uid, symbol, entry, leverage, side, target, stop, price_cache):
+def create_trade(uid, symbol, entry, leverage, side, target, stop, price_cache, custom_usdt=None, partial_tps=None):
     user = users.find_one({"_id": uid})
-    usdt = user['balance'] / 2
+    usdt = custom_usdt or (user['balance'] / 2)
     position = usdt * leverage / entry
     liq = entry * (1 - 1 / leverage) if side == 'long' else entry * (1 + 1 / leverage)
 
@@ -31,8 +31,13 @@ def create_trade(uid, symbol, entry, leverage, side, target, stop, price_cache):
         "position": position,
         "liq": liq,
         "status": "active",
-        "opened": time.time()
+        "opened": time.time(),
+        "partial_tps": partial_tps or [],
+        "tp_hits": []
     })
+
+    users.update_one({"_id": uid}, {"$inc": {"balance": -usdt}})
+
 
 async def monitor_trades(client, price_cache):
     while True:

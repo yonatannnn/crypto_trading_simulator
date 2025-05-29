@@ -33,18 +33,19 @@ async def start(event):
     get_user(event.sender_id)
     await event.respond("""👋 *Welcome to the Crypto Trading Simulator Bot!*
 
-You can simulate leveraged crypto trades using real-time Binance prices.
+Simulate leveraged crypto trades using real-time Binance prices.
 
 📘 *Commands*:
 /sb <amount> – Set starting balance
-/trade <symbol> <leverage> <long|short> <target> [stoploss]
-/balance – Total equity
-/available – Unused balance
-/trades – Show active trades (inline close)
-/history – All trades (active & closed)
-/close <symbol> – Close latest trade for symbol
+/trade <symbol> <lev> <long/short> <target> [stop] <amount> [tp1] [tp2] [tp3]
+/balance – Show total equity
+/available – Show free funds
+/trades – Active trades (inline close)
+/history – All trades
+/stat – Performance summary
 /help – Command list
-/about – About this bot""", parse_mode='markdown')
+/about – About this bot
+""", parse_mode='markdown')
 
 @client.on(events.NewMessage(pattern=r'/sb (\d+(\.\d{1,2})?)'))
 async def sb(event):
@@ -57,7 +58,7 @@ async def sb(event):
     set_balance(uid, amount)
     await event.respond(f"Balance set to {amount:.2f} USDT")
 
-@client.on(events.NewMessage(pattern=r'/trade (\w+) (\d+) (long|short) (\d+(\.\d+)?)(?: (\d+(\.\d+)?))?'))
+@client.on(events.NewMessage(pattern=r'/trade (\w+) (\d+) (long|short) (\d+(\.\d+)?)(?: (\d+(\.\d+)?))? (\d+(\.\d+)?)(?: (\d+(\.\d+)?))?(?: (\d+(\.\d+)?))?(?: (\d+(\.\d+)?))?'))
 async def trade(event):
     uid = event.sender_id
     parts = event.pattern_match.groups()
@@ -66,23 +67,31 @@ async def trade(event):
     side = parts[2].lower()
     target = float(parts[3])
     stoploss = float(parts[5]) if parts[5] else None
-
-    if symbol not in symbols:
-        await event.respond(f"Invalid symbol. Supported: {', '.join(symbols)}")
-        return
+    amount = float(parts[7])
+    tp1 = float(parts[9]) if parts[9] else None
+    tp2 = float(parts[11]) if parts[11] else None
+    tp3 = float(parts[13]) if parts[13] else None
 
     entry = price_cache.get(symbol)
     if not entry:
         await event.respond("Error fetching current price.")
         return
 
+    available = get_available_balance(uid)
+    if amount > available:
+        await event.respond(f"Not enough balance. Available: {available:.2f} USDT")
+        return
+
+    partial_tps = [p for p in [tp1, tp2, tp3] if p]
+    create_trade(uid, symbol, entry, leverage, side, target, stoploss, price_cache, custom_usdt=amount, partial_tps=partial_tps)
+
     liq = entry * (1 - 1 / leverage) if side == 'long' else entry * (1 + 1 / leverage)
-    create_trade(uid, symbol, entry, leverage, side, target, stoploss, price_cache)
+    tp_text = "\n".join([f"TP{i+1}: {tp}" for i, tp in enumerate(partial_tps)]) if partial_tps else "No partial TPs"
 
     await event.respond(
-        f"✅ Trade opened!\n\nSymbol: {symbol.upper()}\nSide: {side.capitalize()}\nEntry: {entry:.2f}\n"
-        f"Leverage: {leverage}x\nTarget: {target}\nStop: {stoploss or 'None'}\n"
-        f"💥 Liquidation Price: {liq:.2f}",
+        f"✅ Trade opened!\n\nSymbol: {symbol.upper()} | Side: {side.capitalize()}\n"
+        f"Entry: {entry:.2f} | Leverage: {leverage}x\nTarget: {target}\nStop: {stoploss or 'None'}\n"
+        f"{tp_text}\n💥 Liquidation: {liq:.2f}",
         parse_mode='markdown'
     )
 
@@ -125,6 +134,21 @@ async def show_active(event):
             parse_mode='markdown'
         )
 
+@client.on(events.CallbackQuery(data=lambda d: d.startswith(b'close:')))
+async def handle_close_callback(event):
+    trade_id = event.data.decode().split(':')[1]
+    result, error = close_trade_by_id(trade_id, price_cache)
+
+    if error:
+        await event.answer(error, alert=True)
+        return
+
+    await event.edit(
+        f"✅ *{result['symbol'].upper()}* trade closed.\n"
+        f"PnL: {result['pnl']:.2f} USDT ({result['percent']:.2f}%)",
+        parse_mode='markdown'
+    )
+
 @client.on(events.NewMessage(pattern='/history'))
 async def trade_history(event):
     uid = event.sender_id
@@ -142,46 +166,65 @@ async def trade_history(event):
         )
     await event.respond(msg, parse_mode='markdown')
 
-@client.on(events.CallbackQuery(data=lambda d: d.startswith(b'close:')))
-async def handle_close_callback(event):
-    trade_id = event.data.decode().split(':')[1]
-    result, error = close_trade_by_id(trade_id, price_cache)
+@client.on(events.NewMessage(pattern='/stat'))
+async def stat(event):
+    uid = event.sender_id
+    user_trades = list(trades.find({"user_id": uid, "status": "closed"}))
+    total_trades = len(user_trades)
 
-    if error:
-        await event.answer(error, alert=True)
+    if total_trades == 0:
+        await event.respond("You haven't closed any trades yet.")
         return
 
-    await event.edit(
-        f"✅ *{result['symbol'].upper()}* trade closed.\n"
-        f"PnL: {result['pnl']:.2f} USDT ({result['percent']:.2f}%)",
+    wins = 0
+    total_pnl = 0
+    total_roi = 0
+
+    for t in user_trades:
+        entry = t['entry']
+        exit_price = t.get('exit', entry)
+        pnl = (exit_price - entry) * t['position'] * (1 if t['side'] == 'long' else -1)
+        roi = (pnl / t['usdt']) * 100
+        if pnl > 0:
+            wins += 1
+        total_pnl += pnl
+        total_roi += roi
+
+    win_rate = (wins / total_trades) * 100
+    avg_roi = total_roi / total_trades
+
+    await event.respond(
+        f"📊 *Stats*\n\n"
+        f"Total Trades: {total_trades}\n"
+        f"Win Rate: {win_rate:.2f}%\n"
+        f"Total PnL: {total_pnl:.2f} USDT\n"
+        f"Average ROI: {avg_roi:.2f}%",
         parse_mode='markdown'
     )
 
 @client.on(events.NewMessage(pattern='/help'))
 async def help_cmd(event):
-    help_text = """
-📘 *Crypto Trading Bot Commands*
+    await event.respond("""📘 *Command List*
 
 🪙 Balance:
-/sb <amount> – Set starting balance
+/sb <amount> – Set balance
 /balance – Show total equity
-/available – Show available funds
+/available – Show free funds
 
-📈 Trades:
-/trade <symbol> <leverage> <long|short> <target> [stoploss]
-/trades – View active trades (with close buttons)
-/history – View all trades (active + closed)
+📈 Trading:
+/trade <symbol> <lev> <long/short> <target> [stop] <amount> [tp1] [tp2] [tp3]
+/trades – Show open trades (inline close)
 /close <symbol> – Close latest trade for symbol
+/history – View all trades
+/stat – Trade stats summary
 
 ℹ️ Info:
-/help – Show this message
-/about – About the bot
-"""
-    await event.respond(help_text, parse_mode='markdown')
+/help – This list
+/about – About the bot""", parse_mode='markdown')
 
 @client.on(events.NewMessage(pattern='/about'))
 async def about(event):
-    await event.respond("📈 *Crypto Trading Simulator Bot*\n\nSimulate leveraged crypto trades using real Binance prices. Made with ❤️ by your assistant.", parse_mode='markdown')
+    await event.respond("📈 *Crypto Trading Simulator Bot*\n\nTrade with real prices, no real risk. Created for learning and fun. Built with Telethon + MongoDB.", parse_mode='markdown')
 
 async def main():
     await client.start()
