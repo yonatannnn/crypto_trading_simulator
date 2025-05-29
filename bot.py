@@ -4,6 +4,7 @@ import os
 import time
 from telethon import TelegramClient, events
 from telethon.tl.custom import Button
+from pymongo import MongoClient
 from dotenv import load_dotenv
 from binance import fetch_price, symbols
 from user import get_user, set_balance, get_available_balance, get_equity
@@ -16,8 +17,15 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 
 client = TelegramClient('bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
 price_cache = {}
+MONGO_URI = os.getenv('MONGO_URI')
 
 logging.basicConfig(level=logging.INFO)
+
+
+mongo = MongoClient(MONGO_URI)
+db = mongo['trading_bot']
+trades = db['trades']
+users = db['users']
 
 async def update_prices():
     while True:
