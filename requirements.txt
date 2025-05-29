@@ -1,0 +1,4 @@
+telethon
+pymongo
+aiohttp
+python-dotenv
