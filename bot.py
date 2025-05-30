@@ -95,11 +95,12 @@ async def trade(event):
 
     liq = entry * (1 - 1 / leverage) if side == 'long' else entry * (1 + 1 / leverage)
     tp_text = "\n".join([f"TP{i+1}: {tp}" for i, tp in enumerate(partial_tps)]) if partial_tps else "No partial TPs"
-
+    exp_pro = (abs(entry - target) / entry) * amount
     await event.respond(
         f"✅ Trade opened!\n\nSymbol: {symbol.upper()} | Side: {side.capitalize()}\n"
         f"Entry: {entry:.2f} | Leverage: {leverage}x\nTarget: {target}\nStop: {stoploss or 'None'}\n"
         f"{tp_text}\n💥 Liquidation: {liq:.2f}",
+        f"Expected profit at target {target} is {exp_pro} usdt.",
         parse_mode='markdown'
     )
 
