@@ -96,11 +96,13 @@ async def trade(event):
     liq = entry * (1 - 1 / leverage) if side == 'long' else entry * (1 + 1 / leverage)
     tp_text = "\n".join([f"TP{i+1}: {tp}" for i, tp in enumerate(partial_tps)]) if partial_tps else "No partial TPs"
     exp_pro = (abs(entry - target) / entry) * amount
+    loss = (abs(entry - stoploss) / entry) * amount if stoploss else 0
     await event.respond(
         f"✅ Trade opened!\n\nSymbol: {symbol.upper()} | Side: {side.capitalize()}\n"
         f"Entry: {entry:.2f} | Leverage: {leverage}x\nTarget: {target}\nStop: {stoploss or 'None'}\n"
         f"{tp_text}\n💥 Liquidation: {liq:.2f}",
-        f"Expected profit at target {target} is {exp_pro} usdt.",
+        f"Expected profit at target {target} is {exp_pro} USDT.",
+        f"Expected loss at stop {stoploss or 'None'} is {loss} USDT.",
         parse_mode='markdown'
     )
 
@@ -127,11 +129,11 @@ async def show_active(event):
     for t in active:
         symbol = t['symbol'].upper()
         price = price_cache.get(t['symbol'], t['entry'])
-        pnl = (price - t['entry']) * t['position'] * (1 if t['side'] == 'long' else -1)
+        pnl = (price - t['entry']) * t['position'] * (t['leverage'] if t['side'] == 'long' else -1*[t['leverage']])
         percent = (pnl / t['usdt']) * 100
 
         msg = (
-            f"📍 *{symbol}* | {t['side'].capitalize()}\n"
+            f"📍{symbol} | {t['side'].capitalize()}\n"
             f"Entry: {t['entry']:.2f} → Now: {price:.2f}\n"
             f"Leverage: {t['leverage']}x\n"
             f"PnL: {pnl:.2f} USDT ({percent:.2f}%)"
@@ -166,7 +168,7 @@ async def trade_history(event):
     for t in all_trades:
         current_price = price_cache.get(t['symbol'], t.get('exit', t['entry']))
         end_price = t.get('exit', current_price)
-        pnl = (end_price - t['entry']) * t['position'] * (1 if t['side'] == 'long' else -1)
+        pnl = (end_price - t['entry']) * t['position'] * (trade["leverage"] if t['side'] == 'long' else -1 * trade["leverage"])
         percent = (pnl / t['usdt']) * 100
         msg += (
             f"\n🔸 {t['symbol'].upper()} | {t['side'].capitalize()} | {t['status'].capitalize()}\n"
@@ -192,7 +194,7 @@ async def stat(event):
     for t in user_trades:
         entry = t['entry']
         exit_price = t.get('exit', entry)
-        pnl = (exit_price - entry) * t['position'] * (1 if t['side'] == 'long' else -1)
+        pnl = (exit_price - entry) * t['position'] * (trade["leverage"] if t['side'] == 'long' else -1 * trade["leverage"])
         roi = (pnl / t['usdt']) * 100
         if pnl > 0:
             wins += 1
