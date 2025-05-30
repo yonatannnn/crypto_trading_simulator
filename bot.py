@@ -39,11 +39,11 @@ async def update_prices():
 @client.on(events.NewMessage(pattern='/start'))
 async def start(event):
     get_user(event.sender_id)
-    await event.respond("""👋 *Welcome to the Crypto Trading Simulator Bot!*
+    await event.respond("""👋 Welcome to the Crypto Trading Simulator Bot!
 
 Simulate leveraged crypto trades using real-time Binance prices.
 
-📘 *Commands*:
+📘 Commands:
 /sb <amount> – Set starting balance
 /trade <symbol> <lev> <long/short> <target> [stop] <amount> [tp1] [tp2] [tp3]
 /balance – Show total equity
@@ -54,6 +54,8 @@ Simulate leveraged crypto trades using real-time Binance prices.
 /help – Command list
 /about – About this bot
 """, parse_mode='markdown')
+    
+
 
 @client.on(events.NewMessage(pattern=r'/sb (\d+(\.\d{1,2})?)'))
 async def sb(event):
@@ -160,6 +162,14 @@ async def handle_close_callback(event):
         parse_mode='markdown'
     )
 
+@client.on(events.NewMessage(pattern=r'/add_fund (\d+(\.\d{1,2})?)'))
+async def add_fund(event):
+    uid = event.sender_id
+    amount = float(event.pattern_match.group(1))
+    user = get_user(uid)
+    set_balance(uid, user['balance'] + amount)
+    await event.respond(f"Added {amount:.2f} USDT to your balance. New balance: {user['balance'] + amount:.2f} USDT")
+
 @client.on(events.NewMessage(pattern='/history'))
 async def trade_history(event):
     uid = event.sender_id
@@ -168,7 +178,7 @@ async def trade_history(event):
     for t in all_trades:
         current_price = price_cache.get(t['symbol'], t.get('exit', t['entry']))
         end_price = t.get('exit', current_price)
-        pnl = (end_price - t['entry']) * t['position'] * (trade["leverage"] if t['side'] == 'long' else -1 * trade["leverage"])
+        pnl = (end_price - t['entry']) * t['position'] * (1 if t['side'] == 'long' else -1)
         percent = (pnl / t['usdt']) * 100
         msg += (
             f"\n🔸 {t['symbol'].upper()} | {t['side'].capitalize()} | {t['status'].capitalize()}\n"
@@ -194,7 +204,7 @@ async def stat(event):
     for t in user_trades:
         entry = t['entry']
         exit_price = t.get('exit', entry)
-        pnl = (exit_price - entry) * t['position'] * (trade["leverage"] if t['side'] == 'long' else -1 * trade["leverage"])
+        pnl = (exit_price - entry) * t['position'] * (1 if t['side'] == 'long' else -1)
         roi = (pnl / t['usdt']) * 100
         if pnl > 0:
             wins += 1

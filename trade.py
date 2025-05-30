@@ -70,7 +70,7 @@ def close_trade_by_id(trade_id, price_cache):
         return None, "Trade not found or already closed."
 
     price = price_cache.get(trade['symbol'], trade['entry'])
-    pnl = (price - trade['entry']) * trade['position'] * (trade["leverage"] if trade['side'] == 'long' else -1 * trade["leverage"])
+    pnl = (price - trade['entry']) * trade['position'] * (1 if trade['side'] == 'long' else -1)
     percent = (pnl / trade['usdt']) * 100
 
     users.update_one({"_id": trade['user_id']}, {"$inc": {"balance": trade['usdt'] + pnl}})
