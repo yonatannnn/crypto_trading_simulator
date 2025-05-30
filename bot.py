@@ -162,13 +162,24 @@ async def handle_close_callback(event):
         parse_mode='markdown'
     )
 
-@client.on(events.NewMessage(pattern=r'/add_fund (\d+(\.\d{1,2})?)'))
+@client.on(events.NewMessage(pattern=r'/deposit (\d+(\.\d{1,2})?)'))
 async def add_fund(event):
     uid = event.sender_id
     amount = float(event.pattern_match.group(1))
     user = get_user(uid)
     set_balance(uid, user['balance'] + amount)
     await event.respond(f"Added {amount:.2f} USDT to your balance. New balance(total): {get_equity(uid, price_cache) + amount:.2f} USDT")
+
+@client.on(events.NewMessage(pattern='/withdraw (\d+(\.\d{1,2})?)'))
+async def withdraw(event):
+    uid = event.sender_id
+    amount = float(event.pattern_match.group(1))
+    user = get_user(uid)
+    if amount > user['balance']:
+        await event.respond(f"Insufficient balance. Available: {user['balance']:.2f} USDT")
+        return
+    set_balance(uid, user['balance'] - amount)
+    await event.respond(f"Withdrew {amount:.2f} USDT. New available balance: {user['balance'] - amount:.2f} USDT")
 
 @client.on(events.NewMessage(pattern='/history'))
 async def trade_history(event):
