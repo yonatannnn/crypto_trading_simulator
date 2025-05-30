@@ -131,7 +131,7 @@ async def show_active(event):
     for t in active:
         symbol = t['symbol'].upper()
         price = price_cache.get(t['symbol'], t['entry'])
-        pnl = (price - t['entry']) * t['position'] * (t['leverage'] if t['side'] == 'long' else -1*[t['leverage']])
+        pnl = (price - t['entry']) * t['position'] * (1 if t['side'] == 'long' else -1)
         percent = (pnl / t['usdt']) * 100
 
         msg = (

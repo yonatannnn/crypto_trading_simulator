@@ -46,7 +46,7 @@ async def monitor_trades(client, price_cache):
             price = price_cache.get(trade['symbol'], 0)
             if not price:
                 continue
-            pnl = (price - trade['entry']) * trade['position'] * (trade['leverage'] if trade['side'] == 'long' else -1*trade['leverage'])
+            pnl = (price - trade['entry']) * trade['position'] * (1 if trade['side'] == 'long' else -1)
             uid = trade['user_id']
             hit_target = (price >= trade['target']) if trade['side'] == 'long' else (price <= trade['target'])
             hit_stop = (price <= trade['stop']) if trade['side'] == 'long' else (price >= trade['stop']) if trade['stop'] else False
