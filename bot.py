@@ -48,6 +48,8 @@ Simulate leveraged crypto trades using real-time Binance prices.
 /trade <symbol> <lev> <long/short> <target> [stop] <amount> [tp1] [tp2] [tp3]
 /balance – Show total equity
 /available – Show free funds
+/deposit <amount> – Deposit funds
+/withdraw <amount> – Withdraw funds
 /trades – Active trades (inline close)
 /history – All trades
 /stat – Performance summary
@@ -243,6 +245,8 @@ async def help_cmd(event):
 /sb <amount> – Set balance
 /balance – Show total equity
 /available – Show free funds
+/withdraw <amount> – Withdraw funds
+/deposit <amount> – Deposit funds
 
 📈 Trading:
 /trade <symbol> <lev> <long/short> <target> [stop] <amount> [tp1] [tp2] [tp3]
