@@ -168,7 +168,7 @@ async def add_fund(event):
     amount = float(event.pattern_match.group(1))
     user = get_user(uid)
     set_balance(uid, user['balance'] + amount)
-    await event.respond(f"Added {amount:.2f} USDT to your balance. New balance: {user['balance'] + amount:.2f} USDT")
+    await event.respond(f"Added {amount:.2f} USDT to your balance. New balance(total): {get_equity(uid, price_cache) + amount:.2f} USDT")
 
 @client.on(events.NewMessage(pattern='/history'))
 async def trade_history(event):
